@@ -1,3 +1,8 @@
+# This is a program I wrote for a Computer Architecture Class
+# It is written in MIPS Assembly Language
+# It is a simple base 4 calculator, capable of addition and subtraction
+# Written in 2014
+
 .data
 s1:	.asciiz	"Enter in the first number: "
 s2:	.asciiz "Enter in the second number: "
