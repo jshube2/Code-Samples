@@ -1,0 +1,382 @@
+# Joshua Shubert ECE 267 Project 3
+# 4-19-2015
+# Postfix Expression Calculator
+
+
+
+.data
+
+stack:		.word	0,0,0,0,0
+
+
+buffer1:	.space	30
+buffer2:	.space	5
+
+
+Prompt1:	.asciiz		"Enter in the post-fix expression for evaluation: "
+Prompt2:	.asciiz		"\nThe decimal result is: "
+Prompt3:	.asciiz		"\nThe hexadecimal result is: "
+
+
+INVALID_EXPRESSION:	.asciiz		"The entered input is an invalid post-fix expression!"
+OVERFLOW:		.asciiz		"Stack Overflow!"
+UNDERFLOW:		.asciiz		"Stack Underflow!"
+
+#------------------------------------------------------------------------------------#
+#---------------------------Register Usage Information-------------------------------#
+#------------------------------------------------------------------------------------#
+
+# $s0 - counters the number of hex digits read in. Used for properly converting to decimal
+# $s1 - keeps track of the number of numbers on the stack.
+# $s2 - End of Buffer flag. Becomes 1 when end of buffer is read and signals either an error call or output
+# $s3 - Adjusts the buffer1 pointer so that each time the InputRead function is called, it points to the right spot
+# $s4 - Operation flag. Becomes 1 when InputRead reads in an operator instead of a hex character.
+# $s5 - 0 = addition, 1 = subtraction, 2 = multiplication, 3 = division. Input argument for OperateStack
+# $s6 - Holds the final decimal result
+# $s7 - Stack Pointer adjuster
+
+#------------------------------------------------------------------------------------#
+#----------------------------------Main Program--------------------------------------#
+#------------------------------------------------------------------------------------#
+.text
+li $s0, 0
+li $s1, 0
+li $s2, 0
+li $s3, 0
+li $s7, 0
+# Prompts the user to enter input, and loads the input into "buffer"
+
+li $v0, 4
+la $a0, Prompt1
+syscall
+li $v0, 8
+la $a0, buffer1
+li $a1, 30
+syscall
+
+MainLoop:
+jal InputRead			# Call a function to read in a number or operation from the input
+beq $s4, 1, OperatorRead	# If an operator was read instead of a hex digit, jump to OperatorRead
+beq $s2, 1, NoMoreInput		# If the no more input flag is set to TRUE, break out of the input read loop
+j MainLoop
+
+OperatorRead:
+jal OperateStack		# Calls this function each time an operator is read from the input buffer
+j MainLoop
+
+NoMoreInput:
+jal Check4Errors
+jal Pop
+move $s6, $t9
+jal OutputResult
+li $v0, 10
+syscall
+
+#------------------------------------------------------------------------------------#
+#------------------------------Function Definitions----------------------------------#
+#------------------------------------------------------------------------------------#
+
+# Input Argument: $s3
+# Output: $s1- EOF, $s4- Operator Flah, $s5- Which Operator was read?
+# Read from first buffer until a space is read, Count the number of hex digits read
+InputRead:
+li $s0, 0		# Initialize the counter of characters read to zero
+la $t0, buffer1		# Load in address of input string
+add $t0, $t0, $s3	# Adjusts the pointer to point to the next number to be read
+la $t2, buffer2		# Load in address of temporary array
+li $t1, 0		
+li $s0, 0		# Keeps track of how many digits were read in
+InputRead_Loop:
+
+lb $t1, ($t0)		# Read in first digit from input
+
+
+
+li $v0, 11		#TEST
+move $a0, $t1		#TEST
+syscall			#TEST
+
+beq $t1, 0x00, InputRead_EndOfInput	# If null is read, we are at end of unput
+beq $t1, 0x0A, InputRead_EndOfInput	# If null is read, we are at end of unput
+blt $t1, 0x20, InvalidExpression	# If a character less than 0x20 is read and it isnt null, the input is invalid
+bgt $t1, 0x5B, InvalidExpression	# If a character greater than 0x5B is read, input is invalid
+
+
+addi $t0, $t0, 1	# increment input pointer
+
+addi $s3, $s3, 1	# increments input pointer adjuster
+beq $t1, 0x20, InputRead_SpaceRead	# If a space is read, stop reading and proceed to convert read number to decimal
+addi $s0, $s0, 1	# increment number of digits read
+beq $t1, 0x2B, InputRead_Add	# Branches if an operator is read
+beq $t1, 0x2D, InputRead_Sub	# Branches if an operator is read
+beq $t1, 0x2A, InputRead_Mul	# Branches if an operator is read
+beq $t1, 0x2F, InputRead_Div	# Branches if an operator is read
+li $s4, 0		# Sets the operator flag to zero because no operator was read
+
+
+
+sb $t1, ($t2)		# If no space is read, send digit to temporary array
+addi $t2, $t2, 1	# increment temporary array pointer
+j InputRead_Loop
+
+InputRead_EndOfInput:
+# If a null is read, exit the function
+li $s2, 1
+jr $ra
+
+InputRead_SpaceRead:
+# If a space is read, perform some nested calls to convert what is stored in the temporary array into a decimal number
+beq $s0, 0, InputRead_NoDigits	# Quits if there is no digits to convert, this should happen when a space is read right after a operator was read
+
+move $a3, $ra
+jal Hex2Dec			# Call Hex2Dec to convert the character stored in buffer2 into a proper decimal value
+move $ra, $a3
+jr $ra				# Return after the Hex2Dec result is pushed onto the stack
+
+InputRead_Add:
+li $s5, 0
+li $s4, 1
+jr $ra
+InputRead_Sub:
+li $s5, 1
+li $s4, 1
+jr $ra
+InputRead_Mul:
+li $s5, 2
+li $s4, 1
+jr $ra
+InputRead_Div:
+li $s5, 3
+li $s4, 1
+jr $ra
+InputRead_NoDigits:
+jr $ra
+
+#-------------------------------------#
+
+# Once a space is read, start reading from the second buffer. Multiply by a power of 16 based on the place.
+# Sum all the multiplied numbers together, push the result onto the stack
+Hex2Dec:
+la $t0, buffer2
+li $t4, 0					# initialize the sum to zero
+
+
+Hex2Dec_Loop:
+lb $t1, ($t0)
+
+beq $t1, 0x00, Hex2Dec_Push			# If null is read, push the sum onto the stack
+bgt $t1, 0x40, Hex2Dec_LetterConvert		# If a letter is pulled from the stack, convert to decimal
+ble $t1, 0x39, Hex2Dec_NumberConvert		# If a hex number is pulled from the stack, convert to decimal
+
+Hex2Dec_LetterConvert:
+bgt $t1, 0x46, InvalidExpression
+subi $t1, $t1, 0x37				# Subtract hex 37 so that A = 10
+j Hex2Dec_Multiply
+
+Hex2Dec_NumberConvert:
+blt $t1, 0x30, InvalidExpression
+subi $t1, $t1, 0x30				# Subtract hex 30 so that 0 = 0
+j Hex2Dec_Multiply
+
+Hex2Dec_Multiply:				# chooses a constant to multiply by based on the position in the buffer2
+beq $s0, 5, _65536mult
+beq $s0, 4, _4096mult
+beq $s0, 3, _256mult
+beq $s0, 2, _16mult
+beq $s0, 1, _1mult
+
+
+_65536mult:
+mul $t1, $t1, 65536
+j Hex2Dec_Sum
+_4096mult:
+mul $t1, $t1, 4096
+j Hex2Dec_Sum
+_256mult:
+mul $t1, $t1, 256
+j Hex2Dec_Sum
+_16mult:
+mul $t1, $t1, 16
+j Hex2Dec_Sum
+_1mult:
+mul $t1, $t1, 1
+j Hex2Dec_Sum
+
+
+Hex2Dec_Sum:	
+add $t4, $t4, $t1		# update the decimal sum
+addi $t0, $t0, 1		# increment the array pointer
+subi $s0, $s0, 1		# Decrease the count of the items in the array. This number basically acts like an exponent
+j Hex2Dec_Loop
+
+Hex2Dec_Push:
+move $t9, $t4			# Passes the sum, $t4, into the argument register $t9
+move $t5, $ra
+jal Push			# Push the converted result onto the stack
+move $ra, $t5
+
+jr $ra
+
+#-------------------------------------#
+# COMPLETE 
+# PUSH, takes item to be pushed in $t9 as an argument
+Push:
+beq $s1, 6, Overflow
+la $t0, stack
+add $t0, $t0, $s7
+addi $s7, $s7, 4
+sw $t9, ($t0)
+addi $s1, $s1, 1	# Increases stack counter by 1
+jr $ra
+
+#-------------------------------------#
+# COMPLETE 
+# POP, item that is popped out is placed in $t9
+Pop:
+beq $s1, 0, Underflow
+la $t0, stack
+subi $s7, $s7, 4
+add $t0, $t0, $s7
+lw $t9, ($t0)
+
+subi $s1, $s1, 1	# Decreases stack counter by 1
+jr $ra
+
+#-------------------------------------#
+# COMPLETE
+# If an operator is read, POP 2 numbers, operate on them. PUSH the result back onto the stack
+OperateStack:
+
+beq $s5, 0, Op_Add
+beq $s5, 1, Op_Sub
+beq $s5, 2, Op_Mul
+beq $s5, 3, Op_Div
+
+Op_Add:
+move $a3, $ra
+jal Pop
+move $ra, $a3
+move $t2, $t9
+move $a3, $ra
+jal Pop
+move $ra, $a3
+move $t3, $t9
+add $t2, $t2, $t3			# add the results of the two pops into $t0
+move $t9, $t2
+move $a3, $ra
+jal Push
+move $ra, $a3
+j Op_Done
+
+Op_Sub:
+
+move $a3, $ra
+jal Pop
+move $ra, $a3
+move $t2, $t9
+move $a3, $ra
+jal Pop
+move $ra, $a3
+move $t3, $t9
+sub $t2, $t3, $t2
+move $t9, $t2
+move $a3, $ra
+jal Push
+move $ra, $a3
+j Op_Done
+
+Op_Mul:
+
+move $a3, $ra
+jal Pop
+move $ra, $a3
+move $t2, $t9
+move $a3, $ra
+jal Pop
+move $ra, $a3
+move $t3, $t9
+mul $t2, $t3, $t2
+move $t9, $t2
+move $a3, $ra
+jal Push
+move $ra, $a3
+j Op_Done
+
+Op_Div:
+
+move $a3, $ra
+jal Pop
+move $ra, $a3
+
+move $t2, $t9
+move $a3, $ra
+jal Pop
+move $ra, $a3
+move $t3, $t9
+div $t2, $t3, $t2
+move $t9, $t2
+move $a3, $ra
+jal Push
+move $ra, $a3
+j Op_Done
+
+Op_Done:
+li $s4, 0		# Set the "operator was read flag" back to zero
+jr $ra
+
+
+#-------------------------------------#
+# COMPLETE
+# When no more input is available, make sure that there are no errors.
+Check4Errors:
+bgt $s1, 1, InvalidExpression	# There should only be one number on the stack when it is time to print the final result
+jr $ra
+#-------------------------------------#
+
+# COMPLETE
+OutputResult:
+li $v0, 4
+la $a0, Prompt2
+syscall
+li $v0, 1
+move $a0, $s6
+syscall 
+
+li $v0, 4
+la $a0, Prompt3
+syscall
+
+li $v0, 34
+move $a0, $s6
+syscall 
+
+jr $ra
+#------------------------------------------------------------------------------------#
+#--------------------------------Error Conditions------------------------------------#
+#------------------------------------------------------------------------------------#
+InvalidExpression:
+# If end of buffer is read and there is more than one number in a stack, INVALID EXPRESSION
+li $v0, 4
+la $a0, INVALID_EXPRESSION
+syscall
+
+li $v0, 10
+syscall
+
+Overflow:
+# If a 6th number is pushed onto the stack, OVERFLOW
+li $v0, 4
+la $a0, OVERFLOW
+syscall
+
+li $v0, 10
+syscall
+
+Underflow:
+# If an operator is read and there are not enough numbers in the stack, UNDERFLOW
+li $v0, 4
+la $a0, UNDERFLOW
+syscall
+
+li $v0, 10
+syscall

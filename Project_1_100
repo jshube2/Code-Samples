@@ -1,0 +1,586 @@
+.data
+s1:	.asciiz	"Enter in the first number: "
+s2:	.asciiz "Enter in the second number: "
+s3:	.asciiz "The result is: "
+s4:	.asciiz "The maximum length of the whole number portion is 20!"
+s5:	.asciiz	"Invalid characters for base 4 entered!"
+s6:	.asciiz "The maximum length of the fractional portion is 10!"
+s7:	.asciiz	"\nThe Program exited successfully!"
+s12:	.asciiz "The output is: "
+
+b1:	.space	32 # Contains A
+b2:	.space	32 # Contains B
+b3:	.space	10 # Contains fractional part of A
+b4:	.space	20 # Contains whole part of A
+b5:	.space	10 # Contains fractional part of B
+b6:	.space	20 # Contains whole part of B	
+b7:	.space	31 # Contains Processed A
+b8:	.space	31 # Contains Processed B
+b9:	.space	31 # Contains final answer
+
+
+
+
+
+
+.text
+#----------------------------------------------------------------------#
+#---------------------Register Usage Guide-----------------------------#
+#----------------------------------------------------------------------#
+
+# $s0 - Holds the number of whole number digits in A
+# $s1 - Holds the number of fractional digits in A
+# $s2 - Holds the number of whole number digits in B
+# $s3 - Holds the number of fractional digits in B
+# $s4 - Flag for A is negative
+# $s5 - Flag for B is negative
+# $s6 - Flag if B > A
+# $s7 - Add negative sign to output
+# $t8 - Flip A and B
+# $t9 - Do Addition instead
+
+#----------------------------------------------------------------------#
+#--------------Prompts the user for input and obtains A----------------#
+#----------------------------------------------------------------------#
+li $v0, 4
+la $a0, s1
+syscall
+li $v0, 8
+la $a0, b1
+li $a1, 32
+syscall
+#----------------------------------------------------------------------#
+#---------------Prompts the user for input and obtains B---------------#
+#----------------------------------------------------------------------#
+li $v0, 4
+la $a0, s2
+syscall
+li $v0, 8
+la $a0, b2
+li $a1, 32
+syscall
+
+#----------------------------------------------------------------------#
+#-------Enters the whole number part of input A into a buffer----------#
+#----------------------------------------------------------------------#
+
+la $t0, b1		# get base address of input string
+la $t3, b4		# get base address of destination buffer
+li $t2, 0		# initialize counter to zero
+
+WC1:
+lb $t1, ($t0)		# get the current element of input string
+
+beq $t1, 0x2E, L1	# checks to see if '.' found; if it is found -> move on to fractional part
+beq $t1, 0x2D, A_neg	# checks to see if '-' found.
+
+sb $t1, ($t3)		# send current element to whole number buffer
+addi $t2, $t2, 1	# increment whole part counter
+addi $t3, $t3, 1	# increment pointer to string
+addi $t0, $t0, 1	# increment pointer to destination buffer
+bgt $t2, 20, ERROR_1	# ERROR 1 = Whole part longer than 20
+bgt $t1, 0x33, ERROR_2	# ERROR 2 = Improper Digit
+blt $t1, 0x2E, ERROR_2
+beq $t1, 0x47, ERROR_2
+j WC1
+
+A_neg:
+beq $s4, 1, ERROR_2	# This jump only occurs if there are 2 or more minus signs
+li $s4, 1		# turns on flag indicating A is negative
+addi $t0, $t0, 1	# increment pointer to string
+j WC1
+
+#----------------------------------------------------------------------#
+#--------Enters the fractional part of input A into a buffer-----------#
+#----------------------------------------------------------------------#
+
+L1:
+move $s0, $t2		# holds length of whole number part of A
+addi $t0, $t0, 1	# Increments the input string pointer to now point to the start of the fractional part
+la $t3, b3		# get base address of destination buffer
+li $t2, 0		# initialize counter to zero
+
+FC1:
+lb $t1, ($t0)		# get the current element of input string
+beq $t1, 0x0A, L2	# checks to see if '\n' found; if it is found -> move on to next input string
+beq $t1, 0x00, L2	# checks to see if '\0' found; if it is found -> move on to next input string
+
+sb $t1, ($t3)		# send current element to fractional buffer
+addi $t2, $t2, 1	# increment fractional part counter
+addi $t3, $t3, 1	# increment pointer to destination buffer
+addi $t0, $t0, 1	# increment pointer to input string
+bgt $t2, 10, ERROR_3	# ERROR 3 = fractional part longer than 10
+bgt $t1, 0x33, ERROR_2	# ERROR 2 = Improper Digit
+blt $t1, 0x2E, ERROR_2
+beq $t1, 0x47, ERROR_2
+j FC1
+
+
+#----------------------------------------------------------------------#
+#-------Enters the whole number part of input B into a buffer----------#
+#----------------------------------------------------------------------#
+L2:
+move $s1, $t2		# holds length of fractional part of A
+# Checks the strings for invalid input and sorts the whole and fractional parts into seperate buffers
+
+la $t0, b2		# get base address of input string
+la $t3, b6		# get base address of destination buffer
+li $t2, 0		# initialize counter to zero
+
+WC2:
+lb $t1, ($t0)		# get the current element of input string
+beq $t1, 0x2E, L3	# checks to see if '.' found; if it is found -> move on to fractional part
+beq $t1, 0x2D, B_neg	# Checks for a leading negative sign
+sb $t1, ($t3)		# send current element to whole number buffer
+addi $t2, $t2, 1	# increment whole part counter
+addi $t3, $t3, 1	# increment pointer to string
+addi $t0, $t0, 1	# increment pointer to destination buffer
+bgt $t2, 20, ERROR_1	# ERROR 1 = Whole part longer than 20
+bgt $t1, 0x33, ERROR_2	# ERROR 2 = Improper Digit
+blt $t1, 0x2E, ERROR_2
+beq $t1, 0x47, ERROR_2
+j WC2
+
+B_neg:
+beq $s5, 1, ERROR_2	# This jump only occurs if there are 2 or more minus signs
+li $s5, 1		# turns on flag indicating B is negative
+addi $t0, $t0, 1	# increment pointer to string
+j WC2
+#----------------------------------------------------------------------#
+#--------Enters the fractional part of input B into a buffer-----------#
+#----------------------------------------------------------------------#
+L3:
+move $s2, $t2		# holds length of whole number of B
+addi $t0, $t0, 1	# Increments the input string pointer to now point to the start of the fractional part
+la $t3, b5		# get base address of destination buffer
+li $t2, 0		# initialize counter to zero
+
+FC2:
+lb $t1, ($t0)		# get the current element of input string
+beq $t1, 0x0A, big_check	# checks to see if '\n' found; if it is found -> move on to next input string
+beq $t1, 0x00, big_check	# checks to see if '\0' found; if it is found -> move on to next input string
+
+sb $t1, ($t3)		# send current element to fractional buffer
+addi $t2, $t2, 1	# increment fractional part counter
+addi $t3, $t3, 1	# increment pointer to string
+addi $t0, $t0, 1	# increment pointer to destination buffer
+bgt $t2, 10, ERROR_3	# ERROR 3 = fractional part longer than 10
+bgt $t1, 0x33, ERROR_2	# ERROR 2 = Improper Digit
+blt $t1, 0x2E, ERROR_2
+beq $t1, 0x47, ERROR_2
+j FC2
+
+#------------------------------------------------------------------------#
+#-----------------Determines which number is bigger----------------------#
+#------------------------------------------------------------------------#
+big_check:
+move $s3, $t2		# holds length of fractional part of B
+li $t2, 0
+bgt $s2, $s0, B_IS_BIGGER
+beq $s2, $s0, B_IS_MAYBE_BIGGER
+j L4
+
+B_IS_BIGGER:
+li $s6, 1			# set flag indicating B is bigger than A
+
+j L4
+
+B_IS_MAYBE_BIGGER:
+la $t0, b4			# load address of whole part of A
+la $t1, b6			# load address of whole part of B
+lb $a0, ($t0)
+lb $a1, ($t1)
+bgt $a1, $a0, B_IS_BIGGER	# compare each byte to see if B is bigger
+addi $t0, $t0, 1		# increment pointer to string
+addi $t1, $t1, 1		# incrememnt pointer to string
+addi $t2, $t2, 1		# increment counter
+beq $t2, 19, L4			# leave if A is bigger than B
+j B_IS_MAYBE_BIGGER
+
+
+
+#------------------------------------------------------------------------#
+#-----------Loads in A into a processed format for calculation-----------#
+#------------------------------------------------------------------------#
+
+L4:
+
+
+
+
+#---------------places a decimal point at position 21--------------------#
+la $t0, b7
+addi $t0, $t0, 20
+li $a0, 0x2E
+sb $a0, ($t0)
+#---------------------loads in the whole number part---------------------#
+
+la $t0, b7
+la $t1, b4
+addi $t0, $t0, 19		# moves the pointer to the 20th position of destination buffer to place a '.'
+subi $s0, $s0, 1
+add  $t1, $t1, $s0
+
+
+
+Z1:
+lb $t2, ($t1)	# takes byte from buffer that holds whole number portion
+
+sb $t2, ($t0)	# sends byte to array to hold processed A
+subi $t0, $t0, 1
+subi $t1, $t1, 1
+subi $s0, $s0, 1
+blt $s0, 0, Z2
+j Z1
+
+#-----------------------loads in the fractional part---------------------#
+Z2:
+
+
+la $t0, b7
+la $t1, b3
+move $t2, $s1
+addi $t0, $t0, 21
+
+Z3:
+lb $t3, ($t1)
+
+sb $t3, ($t0)
+addi $t0, $t0, 1
+addi $t1, $t1, 1
+subi $t2, $t2, 1
+beq $t2, 0, Z4
+j Z3
+
+Z4:
+
+
+
+
+
+#---------------------------------------------------------------------#
+#-----------Loads B into a processed format for calculation-----------#
+#---------------------------------------------------------------------#
+Z5:
+
+
+
+#---------------places a decimal point at position 21--------------------#
+la $t0, b8
+addi $t0, $t0, 20
+li $a0, 0x2E
+sb $a0, ($t0)
+#---------------------loads in the whole number part---------------------#
+
+la $t0, b8
+la $t1, b6
+addi $t0, $t0, 19
+subi $s2, $s2, 1
+add  $t1, $t1, $s2
+
+
+
+Y1:
+lb $t2, ($t1)	# takes byte from buffer that holds whole number portion
+
+sb $t2, ($t0)	# sends byte to array to hold processed A
+subi $t0, $t0, 1
+subi $t1, $t1, 1
+subi $s2, $s2, 1
+blt $s2, 0, Y2
+j Y1
+
+#-----------------------loads in the fractional part---------------------#
+Y2:
+
+
+la $t0, b8
+la $t1, b5
+move $t2, $s3
+addi $t0, $t0, 21
+
+Y3:
+lb $t3, ($t1)
+
+sb $t3, ($t0)
+addi $t0, $t0, 1
+addi $t1, $t1, 1
+subi $t2, $t2, 1
+beq $t2, 0, Y4
+j Y3
+
+Y4:
+
+
+
+#---------------------------------------------------------------------#
+#------------------------Decides to ADD or SUB------------------------#
+#---------------------------------------------------------------------#
+
+Y5:
+j stupid_huge_decision_tree		# sets flags for changing sign, swapping A and B, or adding
+back_from_tree:
+beq $t9, 1, LETS_ADD
+j LETS_SUBTRACT
+#---------------------------------------------------------------------#
+#-----------------------Subtraction Algorithm-------------------------#
+#---------------------------------------------------------------------#
+
+
+
+LETS_SUBTRACT:
+
+
+
+la $t5, b9
+la $t0, b7
+la $t1, b8
+
+bne $t8, 1, not_going_to_swap
+move $k0, $t0
+move $k1, $t1
+move $t0, $k1
+move $t1, $k0
+
+not_going_to_swap:
+li $t6, 31
+li $t7, 0
+add $t0, $t0, $t6
+add $t1, $t1, $t6
+add $t5, $t5, $t6
+
+SUB_LOOP:
+
+lb $t2, ($t0)		# loads in the last digit in A
+
+
+lb $t3, ($t1)		# loads in the last digit in B
+
+
+
+beq $t2, 0x2E, SKIP_THE_MATH	# Skips subtraction if the current characters are periods
+
+beq $t7, 0, FLAG_OFF		
+subi $t2, $t2, 1
+FLAG_OFF:
+bne $t2, 0x00, NOT_NULL_1
+li $t2, 0x30			# Changes NULL to ZERO
+NOT_NULL_1:
+bne $t3, 0x00, NOT_NULL_2
+li $t3, 0x30			# Changes NULL to ZERO
+NOT_NULL_2:
+li $t7, 0			# Resets the BORROW Flag
+ble $t3, $t2, BOTTOM_NUMBER_SMALLER	# If t3 > t2 add 4 to t2. Else just subtract t3 from t2
+addi $t2, $t2, 4
+li $t7, 1			# Sets the BORROW Flag
+BOTTOM_NUMBER_SMALLER:		# Perform the subtraction of t2-t3
+sub $t4, $t2, $t3
+addi $t4, $t4, 0x30		# Add 0x30 back to prepare for output
+sb $t4, ($t5)			# Send the result to the final answer buffer
+SKIP_THE_MATH:
+bne $t2, 0x2E, DONT_ADD_DECIMAL_POINT	# If the current char is not a period, skip to label
+sb $t2, ($t5)
+DONT_ADD_DECIMAL_POINT:		# Increment addresses and counters
+subi $t0, $t0, 1
+subi $t1, $t1, 1
+subi $t5, $t5, 1
+subi $t6, $t6, 1
+blt $t6, 0, DONE_SUBTRACTING	# Break when 31 counts down to zero
+j SUB_LOOP
+
+#------------------------------------------------------------------#
+#----------------------ADDITION ALGORITHM--------------------------#
+#------------------------------------------------------------------#
+LETS_ADD:
+
+la $t5, b9
+la $t0, b7
+la $t1, b8
+
+bne $t8, 1, not_going_to_swap_ADD
+move $k0, $t0
+move $k1, $t1
+move $t0, $k1
+move $t1, $k0
+
+not_going_to_swap_ADD:
+li $t6, 31
+li $t7, 0
+add $t0, $t0, $t6
+add $t1, $t1, $t6
+add $t5, $t5, $t6	# we set the pointers to point to the end of all the buffers
+
+SUB_LOOP_ADD:
+
+lb $t2, ($t0)		# loads in the last digit in A
+lb $t3, ($t1)		# loads in the last digit in B
+
+
+beq $t2, 0x2E, SKIP_THE_MATH_ADD	# Skips addition if the current characters are periods
+
+
+
+bne $t2, 0x00, NOT_NULL_1_ADD
+li $t2, 0x30			# Changes NULL to ZERO
+NOT_NULL_1_ADD:
+bne $t3, 0x00, NOT_NULL_2_ADD
+li $t3, 0x30			# Changes NULL to ZERO
+NOT_NULL_2_ADD:
+beq $t7, 0, FLAG_OFF_ADD	# add the carry to the current top number	
+addi $t2, $t2, 1
+FLAG_OFF_ADD:
+li $t7, 0			# Resets the BORROW Flag
+
+add $t4, $t2, $t3
+bgt $t4, 0x63, TURN_ON_CARRY_FLAG
+j didnt_carry
+
+TURN_ON_CARRY_FLAG:
+subi $t4, $t4, 4
+li $t7, 1
+
+didnt_carry:
+subi $t4, $t4, 0x30		# Add 0x30 back to prepare for output
+sb $t4, ($t5)			# Send the result to the final answer buffer
+SKIP_THE_MATH_ADD:
+bne $t2, 0x2E, DONT_ADD_DECIMAL_POINT_ADD	# If the current char is not a period, skip to label
+sb $t2, ($t5)
+DONT_ADD_DECIMAL_POINT_ADD:		# Increment addresses and counters
+subi $t0, $t0, 1
+subi $t1, $t1, 1
+subi $t5, $t5, 1
+subi $t6, $t6, 1
+blt $t6, 0, DONE_ADD	# Break when 31 counts down to zero
+j SUB_LOOP_ADD
+
+#------------------------------------------------------------------#
+#------------Output the contents of the final buffer --------------#
+#------------------------------------------------------------------#
+DONE_ADD:
+DONE_SUBTRACTING:
+
+li $v0, 4
+la $a0, s12
+syscall
+
+bgt $s1, $s3, A_fraq_longer
+bgt $s3, $s1, B_fraq_longer
+move $t3, $s1
+addi $t3, $t3, 21
+j done_fraq
+A_fraq_longer:
+move $t3, $s1
+addi $t3, $t3, 21
+j done_fraq
+B_fraq_longer:
+move $t3, $s3
+addi $t3, $t3, 21
+j done_fraq
+done_fraq:
+
+li $t2, 1		# Dont output leading zeroes flag
+la $t0, b9		# load in base address of processed A
+li $t1, 0		# initialize counter
+
+bne $s7, 1, START 	# Prints a leading negative sign if the flag is set
+li $v0, 11
+li $a0, 0x2D
+syscall
+
+START:
+lb $a0, ($t0)		# get char from processed A
+bne $a0, 0x30, TURN_FLAG_OFF
+bne $t2, 0, X8		# skips the output step for leading zeroes
+TURN_FLAG_OFF:
+li $t2, 0		# turns off the flag the first time a non zero is encountered
+bne $a0, 0x00, X6	# skip if its a null char
+li $v0, 11
+li $a0, 0x6F
+syscall
+j X8
+X6:
+li $v0, 11
+syscall
+X8:			# Counters and addresses are incremented
+addi $t0, $t0, 1
+addi $t1, $t1, 1
+beq $t1, $t3, X5	# Stop printing too many zeroes
+beq $t1, 31, X5		# exit after all 31 spots printed or skipped
+j START
+X5:
+
+#---------------------------------------------------------------------#
+#---------------------------End the program---------------------------#
+#---------------------------------------------------------------------#
+
+li $v0, 4
+la $a0, s7
+syscall
+li $v0, 10
+syscall
+
+#---------------------------------------------------------------------#
+#-------------------------Decision Tree-------------------------------#
+#---------------------------------------------------------------------#
+stupid_huge_decision_tree:
+beq $s4, 1, AAA
+beq $s5, 1, BBB
+beq $s6, 1, CCC
+j back_from_tree
+
+AAA:
+li $s7, 1			# if A is negative, flip sign at output
+beq $s5, 1, AAB
+li $t9, 1			# if A is neg but B is pos, ADD instead of SUB
+j back_from_tree
+
+AAB:
+beq $s6, 1, AAC			# if A and B are neg, check which is bigger
+j back_from_tree
+
+AAC:
+li $t8, 1			# if A and B are neg and B is bigger, swap A and B
+li $s7, 0
+j back_from_tree
+
+BBB:
+beq $s5, 1, BBA			# if A is pos, check if B is pos or neg
+j back_from_tree
+
+BBA:
+li $t9, 1			# if A is pos and B is neg, ADD A and B
+j back_from_tree
+
+CCC:
+li $s7, 1
+li $t8, 1			# if B is bigger than A and A and B are both pos, swap A and B
+j back_from_tree
+
+
+
+#---------------------------------------------------------------------#
+#-----------------------------Error Cases-----------------------------#
+#---------------------------------------------------------------------#
+
+ERROR_1:		# ERROR 1 = Whole part longer than 20
+li $v0, 4
+la $a0, s4
+syscall
+li $v0, 10
+syscall
+
+ERROR_2:		# ERROR 2 = Improper Digit
+li $v0, 4
+la $a0, s5
+syscall
+li $v0, 10
+syscall
+
+ERROR_3:		# ERROR 3 = fractional part longer than 10
+li $v0, 4
+la $a0, s6
+syscall
+li $v0, 10
+syscall
+
+
