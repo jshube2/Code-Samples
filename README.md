@@ -1,2 +1,2 @@
-# Code-Samples
-Where I post old code that is not affiliated with any project (usually old homeworks) and rewrite it to have a record of style and clarity improvements
+# Embedded-C-And-ASM-Code
+A collection of MIPS Assembly and Embedded C code created for the HCS12 Microcontroller Platform
